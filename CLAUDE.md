@@ -24,4 +24,8 @@ ruff check .
 
 `tests/paraview/` runs the reader inside ParaView and is skipped unless `paraview.simple` imports (e.g. a conda env with `conda-forge::paraview netcdf4 pytest`, and `pip install -e . --no-deps`). Everything else needs only the pip `vtk` wheel, which renders headless through EGL/OSMesa. CI (`.github/workflows/ci.yml`) runs both, on Linux, macOS and Windows for pip vtk.
 
+## Releasing
+
+`.github/workflows/release.yml` runs on a published GitHub release tagged `vX.Y.Z`, which must match `anuga_paraview.__version__`: it builds, runs `twine check`, smoke-tests the wheel and uploads to PyPI by trusted publishing (PyPI project `anuga-paraview`, environment `pypi`). Run by hand it only builds and checks. `MANIFEST.in` puts `tests/` and `data/` in the sdist (not the wheel) so the sdist can be tested.
+
 On a Wayland desktop ParaView may hang at startup: the launcher sets `QT_QPA_PLATFORM=xcb`.

@@ -1,0 +1,5 @@
+# The sdist carries the tests and their sample files, so it can be tested
+# (e.g. by a conda-forge recipe).  The wheel has only the package.
+graft tests
+graft data
+global-exclude *.py[cod] __pycache__
