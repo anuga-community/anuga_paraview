@@ -205,6 +205,13 @@ It works with the ``vtk`` wheel from pip, which renders without a display
 (through EGL or OSMesa) on a headless server, and with the VTK in
 ParaView's conda package.  It serves one user at a time.
 
+The server stops by itself five minutes after the last browser tab
+connected to it closes, or five minutes after it starts if no browser
+connects.  ``--timeout`` sets that delay in seconds, and ``--timeout 0``
+keeps it running, as a long-lived service (in a container, say) needs::
+
+    anuga-web-viewer run.sww --port 8080 --server --timeout 0
+
 .. _trame: https://kitware.github.io/trame/
 
 Testing
