@@ -67,7 +67,11 @@ jobs:
           miniforge-version: latest
           activate-environment: paraview
           channels: conda-forge
-      - run: conda install -y paraview netcdf4 pytest
+      # vtk-base 9.7.0 build py314h5f6b05c_1 (2026-10-21) links the external
+      # cgns, but ParaView 6.2 was built against the earlier build and still
+      # needs VTK's own libvtkcgns-9.7.so.1.  Pin the earlier build until
+      # conda-forge rebuilds ParaView, then drop the python and vtk-base pins.
+      - run: conda install -y paraview netcdf4 pytest python=3.14 "vtk-base=9.7.0=py314h1d44257_1"
       - run: pip install -e . --no-deps
       - run: python -c "import paraview.simple; print(paraview.simple.GetParaViewVersion())"
       - run: python -m pytest -v
