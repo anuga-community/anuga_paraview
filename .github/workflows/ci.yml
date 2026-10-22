@@ -37,15 +37,17 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libosmesa6
       - name: Install Mesa for headless rendering
-        # Windows runners have no OpenGL 3.2; VTK then falls back to OSMesa,
-        # as a Windows server without a GPU would.
+        # Windows runners have only OpenGL 1.1.  Mesa's software opengl32.dll
+        # (llvmpipe), next to python.exe, gives VTK a full OpenGL, as it would
+        # on a Windows server without a GPU.  (Mesa no longer ships OSMesa,
+        # the other fallback VTK looks for.)
         if: runner.os == 'Windows'
         shell: bash
         run: |
           curl -sSfLo mesa.7z https://github.com/pal1000/mesa-dist-win/releases/download/26.2.4/mesa3d-26.2.4-release-msvc.7z
           7z x -omesa mesa.7z > /dev/null
-          ls mesa/x64
-          cygpath -w "$PWD/mesa/x64" >> "$GITHUB_PATH"
+          cp mesa/x64/*.dll "$pythonLocation"
+          echo GALLIUM_DRIVER=llvmpipe >> "$GITHUB_ENV"
       - run: pip install -e ".[web,test]"
       - run: python -m pytest -v
 
