@@ -1,0 +1,63 @@
+name: Release
+
+# Publishing a GitHub release tagged vX.Y.Z builds the sdist and wheel and
+# uploads them to PyPI by trusted publishing (no token is stored here).  The
+# tag must match anuga_paraview.__version__.  Pull requests that touch the
+# packaging, and running the workflow by hand, only build and check.
+
+on:
+  release:
+    types: [published]
+  pull_request:
+    paths: [pyproject.toml, MANIFEST.in, README.rst, .github/workflows/release.yml]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: build sdist and wheel
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install build twine
+      - run: python -m build
+      - run: twine check --strict dist/*
+      - name: Check the tag matches the version
+        if: github.event_name == 'release'
+        run: |
+          version=$(PYTHONPATH=src python -c "import anuga_paraview; print(anuga_paraview.__version__)")
+          tag="${GITHUB_REF_NAME#v}"
+          if [ "$version" != "$tag" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match __version__ $version"
+            exit 1
+          fi
+      - name: Smoke test the wheel
+        run: |
+          python -m venv /tmp/venv
+          /tmp/venv/bin/pip install dist/*.whl
+          cd /tmp
+          /tmp/venv/bin/anuga-paraview --version
+          /tmp/venv/bin/python -c "import anuga_paraview, os; assert os.path.isfile(anuga_paraview.PLUGIN)"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    name: publish to PyPI
+    if: github.event_name == 'release'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/anuga-paraview
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1

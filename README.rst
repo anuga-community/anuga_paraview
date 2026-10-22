@@ -31,14 +31,17 @@ For ParaView, the conda-forge build is the easiest, since the reader needs
 
     conda create -n paraview -c conda-forge paraview netcdf4
     conda activate paraview
-    pip install git+https://github.com/anuga-community/anuga_paraview
+    pip install anuga-paraview
 
 It is tested with ParaView 6.2; older 5.x releases may work but are
 untested.
 
 For the web viewer alone, no ParaView or conda is needed::
 
-    pip install "anuga-paraview[web] @ git+https://github.com/anuga-community/anuga_paraview"
+    pip install "anuga-paraview[web]"
+
+The development version installs with
+``pip install git+https://github.com/anuga-community/anuga_paraview``.
 
 Quick start
 -----------
@@ -178,7 +181,7 @@ Web viewer
 ``anuga-web-viewer`` is a browser viewer built with trame_.  It reuses the
 reader's file code with plain VTK, so it does not need ParaView::
 
-    pip install "anuga-paraview[web] @ git+https://github.com/anuga-community/anuga_paraview"
+    pip install "anuga-paraview[web]"
     anuga-web-viewer run.sww --port 8080
 
 and open http://localhost:8080.  The server reads the file and renders, and
@@ -207,6 +210,14 @@ with values read directly from the files.  In an environment with
 ParaView (``conda install -c conda-forge paraview``), the same command also
 checks the reader inside ParaView (``tests/paraview/``); elsewhere those
 tests are skipped.
+
+Releasing
+---------
+
+Set ``__version__`` in ``src/anuga_paraview/__init__.py``, merge, then
+publish a GitHub release tagged ``v`` plus that version (e.g. ``v0.1.0``).
+The Release workflow builds the sdist and wheel, checks the tag matches the
+version, and uploads them to PyPI by trusted publishing.
 
 License
 -------
