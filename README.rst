@@ -190,8 +190,8 @@ be viewed through ``ssh -L 8080:localhost:8080 host``.
 
 - The bed and water with a time slider and Play.  Times are shown as hours
   since the start, or, when the file's ``starttime`` is a date, as the date
-  and time in its ``timezone``.  The last position of the slider shows the
-  maximum depth, speed, stage or momentum over the run.
+  and time in its ``timezone``.  *Max* shows the maximum depth, speed,
+  stage or momentum over the run.
 - The side panel sets the quantity the water is coloured by, the colour
   map and scale maximum, the depth below which water is hidden, and the
   vertical scale.

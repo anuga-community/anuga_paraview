@@ -123,9 +123,14 @@ def test_the_app_builds_and_reacts_to_its_state():
     assert scene.index == 5
     assert state.time_label == scene.clock.label(5)
 
-    state.index = state.last_index
+    state.show_max = True
     state.flush()
+    assert scene.index == scene.maximum_index
     assert state.time_label == 'Maximum over the run'
+    state.index = 3                        # the slider goes back to the timesteps
+    state.flush()
+    assert not state.show_max
+    assert scene.index == 3 and state.time_label == scene.clock.label(3)
 
     state.view_2d = True
     state.flush()

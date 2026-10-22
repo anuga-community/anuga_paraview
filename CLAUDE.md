@@ -12,7 +12,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `src/anuga_paraview/scripts/view_sww.py`: a ParaView script that sets up a ready-made view. It finds the plugin by path, not by import.
 - `src/anuga_paraview/cli.py`: `anuga-paraview [file.sww] [--plugin-path] [--paraview PATH]`, which runs ParaView with `PV_PLUGIN_PATH` set and the view script.
 - `src/anuga_paraview/web/clock.py` (`Clock`: elapsed time, or date and time from the `starttime`/`timezone` attributes) and `web/georef.py` (`Georeference`: `xllcorner`/`yllcorner` offset, EPSG resolved as anuga_viewer does, UTM to latitude/longitude by Krüger's series): plain Python, no VTK.
-- `src/anuga_paraview/web/scene.py`: `SWWScene`, the VTK scene of the web viewer (needs only VTK). Index `maximum_index` (one past the last timestep) shows the maxima over the run; `set_view_2d` gives a top-down parallel view where left-drag pans; `png()` saves the view. `headless_window()` picks EGL/OSMesa when Linux has no `DISPLAY`, so VTK does not try X first. `web/app.py`: the trame app, `anuga-web-viewer file.sww --port 8080`. `build(server, filename)` sets up a server; `main()` runs it.
+- `src/anuga_paraview/web/scene.py`: `SWWScene`, the VTK scene of the web viewer (needs only VTK). Index `maximum_index` (one past the last timestep) shows the maxima over the run (the app's *Max* button); `set_view_2d` gives a top-down parallel view where left-drag pans; `png()` saves the view. `headless_window()` picks EGL/OSMesa when Linux has no `DISPLAY`, so VTK does not try X first. `web/app.py`: the trame app, `anuga-web-viewer file.sww --port 8080`. `build(server, filename)` sets up a server; `main()` runs it.
 - `data/`: sample `.sww` files used by the tests.
 
 ## Testing

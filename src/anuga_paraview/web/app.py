@@ -39,7 +39,7 @@ def build(server, filename):
 
     state.trame__title = os.path.basename(filename)
     state.index = 0
-    state.last_index = scene.maximum_index
+    state.show_max = False
     state.time_label = scene.time_label(0)
     state.playing = False
     state.quantity = scene.quantity
@@ -80,13 +80,24 @@ def build(server, filename):
                           xaxis_title=axis_title, legend=dict(orientation='h', y=1.12))
         return fig
 
-    @state.change('index')
-    def on_index(index, **_):
-        scene.show(int(index))
-        state.time_label = scene.time_label(int(index))
+    def _show(index):
+        scene.show(index)
+        state.time_label = scene.time_label(index)
         if state.series is not None:
             ctrl.chart_update(_chart())
         ctrl.view_update()
+
+    @state.change('index')
+    def on_index(index, **_):
+        # Moving the slider leaves the maxima for the timestep.
+        if state.show_max:
+            state.show_max = False
+        else:
+            _show(int(index))
+
+    @state.change('show_max')
+    def on_show_max(show_max, **_):
+        _show(scene.maximum_index if show_max else int(state.index))
 
     @state.change('quantity')
     def on_quantity(quantity, **_):
@@ -140,13 +151,13 @@ def build(server, filename):
     @state.change('playing')
     def on_playing(playing, **_):
         if playing:
+            state.show_max = False
             asyncio.ensure_future(_play())
 
     async def _play():
-        # Play the timesteps, not the maxima after them.
         while state.playing:
             with state:
-                state.index = (min(state.index, len(times) - 1) + 1) % len(times)
+                state.index = (state.index + 1) % len(times)
             await asyncio.sleep(FRAME_DELAY)
 
     def on_click(event):
@@ -174,10 +185,15 @@ def build(server, filename):
             v3.VSpacer()
             v3.VBtn(icon=("playing ? 'mdi-pause' : 'mdi-play'",),
                     click='playing = !playing', variant='text')
-            # The last position shows the maxima over the run.
-            v3.VSlider(v_model=('index', 0), min=0, max=('last_index',), step=1,
+            v3.VSlider(v_model=('index', 0), min=0, max=len(times) - 1, step=1,
                        hide_details=True, density='compact', style='max-width: 400px')
-            v3.VLabel('{{ time_label }}', classes='mx-4', style='min-width: 160px')
+            # A fixed width, so the slider does not move as the label changes.
+            v3.VLabel('{{ time_label }}', classes='mx-4',
+                      style='width: 290px; white-space: nowrap; overflow: hidden;'
+                            ' text-overflow: ellipsis')
+            v3.VBtn('Max', click='show_max = !show_max', title='Maximum over the run',
+                    variant=("show_max ? 'flat' : 'text'",),
+                    color=("show_max ? 'primary' : undefined",))
             v3.VBtn(icon=("view_2d ? 'mdi-rotate-3d-variant' : 'mdi-map-outline'",),
                     click='view_2d = !view_2d', variant='text',
                     title=("view_2d ? '3D view' : '2D map view'",))
