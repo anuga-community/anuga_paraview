@@ -23,7 +23,9 @@ classifiers = [
 dependencies = ["numpy", "netCDF4"]
 
 [project.optional-dependencies]
-web = ["vtk", "trame", "trame-vtk", "trame-vuetify", "trame-plotly", "plotly"]
+# tzdata: Windows has no time zone database for zoneinfo.
+web = ["vtk", "trame", "trame-vtk", "trame-vuetify", "trame-plotly", "plotly",
+       "tzdata; sys_platform == 'win32'"]
 test = ["pytest"]
 
 [project.scripts]

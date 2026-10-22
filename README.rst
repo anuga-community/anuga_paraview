@@ -186,13 +186,31 @@ reader's file code with plain VTK, so it does not need ParaView::
 
 and open http://localhost:8080.  The server reads the file and renders, and
 the browser only receives images, so a large file on a remote machine can
-be viewed through ``ssh -L 8080:localhost:8080 host``.  It shows the bed
-and water with a time slider and Play; the side panel sets the quantity the
-water is coloured by, the colour map and scale maximum, the depth below
-which water is hidden, and the vertical scale, and plots a timeseries at a
-picked point.  It works with the ``vtk`` wheel from pip, which renders
-without a display (through EGL or OSMesa) on a headless server, and with
-the VTK in ParaView's conda package.  It serves one user at a time.
+be viewed through ``ssh -L 8080:localhost:8080 host``.
+
+- The bed and water with a time slider and Play.  Times are shown as hours
+  since the start, or, when the file's ``starttime`` is a date, as the date
+  and time in its ``timezone``.  *Max* shows the maximum depth, speed,
+  stage or momentum over the run.
+- The side panel sets the quantity the water is coloured by, the colour
+  map and scale maximum, the depth below which water is hidden, and the
+  vertical scale.
+- *Pick a point* plots a timeseries there and gives its projected
+  coordinates and, for UTM-based systems (WGS 84, GDA2020, GDA94, AGD,
+  ETRS89), its EPSG code and latitude and longitude.
+- The toolbar switches between the 3D view and a 2D map view from above,
+  resets the view, and saves it as a PNG.
+
+It works with the ``vtk`` wheel from pip, which renders without a display
+(through EGL or OSMesa) on a headless server, and with the VTK in
+ParaView's conda package.  It serves one user at a time.
+
+The server stops by itself five minutes after the last browser tab
+connected to it closes, or five minutes after it starts if no browser
+connects.  ``--timeout`` sets that delay in seconds, and ``--timeout 0``
+keeps it running, as a long-lived service (in a container, say) needs::
+
+    anuga-web-viewer run.sww --port 8080 --server --timeout 0
 
 .. _trame: https://kitware.github.io/trame/
 

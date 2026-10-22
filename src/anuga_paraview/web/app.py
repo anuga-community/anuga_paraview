@@ -19,7 +19,7 @@ import sys
 
 from trame.app import get_server
 from trame.ui.vuetify3 import SinglePageWithDrawerLayout
-from trame.widgets import plotly, vuetify3 as v3, vtk as vtk_widgets
+from trame.widgets import html, plotly, vuetify3 as v3, vtk as vtk_widgets
 
 import plotly.graph_objects as go
 
@@ -35,10 +35,12 @@ def build(server, filename):
 
     scene = SWWScene(filename)
     times = scene.sww.time
+    axis, axis_title = scene.clock.axis()
 
     state.trame__title = os.path.basename(filename)
     state.index = 0
-    state.time_label = 'Time: %.1f s' % times[0]
+    state.show_max = False
+    state.time_label = scene.time_label(0)
     state.playing = False
     state.quantity = scene.quantity
     state.quantities = scene.quantities
@@ -48,6 +50,7 @@ def build(server, filename):
     state.wet_depth = WET_DEPTH
     state.units = UNITS
     state.vertical_scale = 1.0
+    state.view_2d = False
     state.picking = False
     state.pick_modes = []
     state.location = ''
@@ -65,24 +68,36 @@ def build(server, filename):
             fig.add_annotation(text='Outside the mesh', showarrow=False)
         else:
             for i, name in enumerate(wanted):
-                fig.add_trace(go.Scatter(x=times, y=data[name], name=name,
+                fig.add_trace(go.Scatter(x=axis, y=data[name], name=name,
                                          yaxis='y' if i == 0 else 'y2'))
-            fig.add_vline(x=float(times[state.index]), line_color='grey', line_dash='dot')
+            if scene.index < scene.maximum_index:
+                fig.add_vline(x=axis[scene.index], line_color='grey', line_dash='dot')
             fig.update_layout(yaxis=dict(title='%s (%s)' % (wanted[0], UNITS[wanted[0]])))
             if len(wanted) > 1:
                 fig.update_layout(yaxis2=dict(title='%s (%s)' % (wanted[1], UNITS[wanted[1]]),
                                               overlaying='y', side='right'))
         fig.update_layout(margin=dict(l=40, r=40, t=10, b=30), height=260,
-                          xaxis_title='Time (s)', legend=dict(orientation='h', y=1.12))
+                          xaxis_title=axis_title, legend=dict(orientation='h', y=1.12))
         return fig
 
-    @state.change('index')
-    def on_index(index, **_):
-        scene.show(int(index))
-        state.time_label = 'Time: %.1f s' % times[int(index)]
+    def _show(index):
+        scene.show(index)
+        state.time_label = scene.time_label(index)
         if state.series is not None:
             ctrl.chart_update(_chart())
         ctrl.view_update()
+
+    @state.change('index')
+    def on_index(index, **_):
+        # Moving the slider leaves the maxima for the timestep.
+        if state.show_max:
+            state.show_max = False
+        else:
+            _show(int(index))
+
+    @state.change('show_max')
+    def on_show_max(show_max, **_):
+        _show(scene.maximum_index if show_max else int(state.index))
 
     @state.change('quantity')
     def on_quantity(quantity, **_):
@@ -120,6 +135,15 @@ def build(server, filename):
         scene.set_vertical_scale(float(vertical_scale))
         ctrl.view_update()
 
+    @state.change('view_2d')
+    def on_view_2d(view_2d, **_):
+        scene.set_view_2d(view_2d)
+        ctrl.view_update()
+
+    @ctrl.trigger('png')
+    def png():
+        return server.protocol.addAttachment(scene.png())
+
     @state.change('picking')
     def on_picking(picking, **_):
         state.pick_modes = ['click'] if picking else []
@@ -127,6 +151,7 @@ def build(server, filename):
     @state.change('playing')
     def on_playing(playing, **_):
         if playing:
+            state.show_max = False
             asyncio.ensure_future(_play())
 
     async def _play():
@@ -147,7 +172,7 @@ def build(server, filename):
             return
         ctrl.view_update()
         state.series = found
-        state.location = 'x = %.1f, y = %.1f' % found
+        state.location = '\n'.join(scene.georef.describe(*found))
         ctrl.chart_update(_chart())
 
     def reset_camera():
@@ -162,8 +187,23 @@ def build(server, filename):
                     click='playing = !playing', variant='text')
             v3.VSlider(v_model=('index', 0), min=0, max=len(times) - 1, step=1,
                        hide_details=True, density='compact', style='max-width: 400px')
-            v3.VLabel('{{ time_label }}', classes='mx-4', style='min-width: 120px')
-            v3.VBtn(icon='mdi-crop-free', click=reset_camera, variant='text')
+            # A fixed width, so the slider does not move as the label changes.
+            v3.VLabel('{{ time_label }}', classes='mx-4',
+                      style='width: 290px; white-space: nowrap; overflow: hidden;'
+                            ' text-overflow: ellipsis')
+            v3.VBtn('Max', click='show_max = !show_max', title='Maximum over the run',
+                    variant=("show_max ? 'flat' : 'text'",),
+                    color=("show_max ? 'primary' : undefined",))
+            v3.VBtn(icon=("view_2d ? 'mdi-rotate-3d-variant' : 'mdi-map-outline'",),
+                    click='view_2d = !view_2d', variant='text',
+                    title=("view_2d ? '3D view' : '2D map view'",))
+            v3.VBtn(icon='mdi-crop-free', click=reset_camera, variant='text',
+                    title='Reset the view')
+            # The file name goes in a JavaScript string: leave out quotes.
+            png_name = os.path.splitext(os.path.basename(filename))[0] + '.png'
+            png_name = png_name.replace("'", '').replace('"', '').replace('\\', '')
+            v3.VBtn(icon='mdi-camera', variant='text', title='Save the view as PNG',
+                    click="utils.download('%s', trigger('png'), 'image/png')" % png_name)
 
         with layout.drawer as drawer:
             drawer.width = 420
@@ -184,8 +224,9 @@ def build(server, filename):
                 v3.VBtn('Pick a point', prepend_icon='mdi-crosshairs-gps',
                         click='picking = true', block=True,
                         color=("picking ? 'primary' : undefined",))
-                v3.VLabel("{{ picking ? 'Click on the surface' : location }}",
-                          classes='my-2')
+                html.Div("{{ picking ? 'Click on the surface' : location }}",
+                         classes='my-2 text-body-2 text-medium-emphasis',
+                         style='white-space: pre-line')
                 figure = plotly.Figure(display_mode_bar=False, v_show='series')
                 ctrl.chart_update = figure.update
 

@@ -4,19 +4,28 @@ It needs only VTK (the vtk wheel or ParaView's) and the reader's file code,
 not trame, so it can be used, and tested, on its own.
 """
 
+import ctypes.util
+import os
+import sys
+
 import numpy as np
 
 # Load the VTK object factories that render the scene.
 import vtkmodules.vtkInteractionStyle  # noqa: F401
+import vtkmodules.vtkRenderingFreeType  # noqa: F401
 import vtkmodules.vtkRenderingOpenGL2  # noqa: F401
 from vtkmodules.vtkFiltersSources import vtkLineSource
+from vtkmodules.vtkIOImage import vtkPNGWriter
 from vtkmodules.vtkRenderingAnnotation import vtkScalarBarActor
 from vtkmodules.vtkRenderingCore import (
     vtkActor, vtkCellPicker, vtkColorTransferFunction, vtkPolyDataMapper,
-    vtkRenderWindow, vtkRenderWindowInteractor, vtkRenderer)
+    vtkRenderWindow, vtkRenderWindowInteractor, vtkRenderer, vtkTextActor,
+    vtkWindowToImageFilter)
 from vtkmodules.vtkInteractionStyle import vtkInteractorStyleTrackballCamera
 
 from anuga_paraview.plugin.sww_reader import DRY_DEPTH, SWWFile, _surface
+from anuga_paraview.web.clock import Clock
+from anuga_paraview.web.georef import Georeference
 
 # Timesteps sampled to find each quantity's colour range.
 RANGE_SAMPLES = 50
@@ -49,6 +58,24 @@ DEFAULT_MAP = {'depth': 'Turbo', 'speed': 'Plasma', 'stage': 'Viridis', 'momentu
 UNITS = {'depth': 'm', 'stage': 'm', 'speed': 'm/s', 'momentum': 'm²/s'}
 
 
+def headless_window(environ=None, find_library=ctypes.util.find_library):
+    """The VTK render window class to ask for on a Linux machine without a
+    display, or None to leave the choice to VTK.
+
+    Left to itself, VTK tries X first and logs "bad X server connection"
+    before falling back to offscreen rendering.  Only X counts as a display:
+    VTK draws in a window through X, or through XWayland on Wayland."""
+    environ = os.environ if environ is None else environ
+    if (not sys.platform.startswith('linux') or 'VTK_DEFAULT_OPENGL_WINDOW' in environ
+            or environ.get('DISPLAY')):
+        return None
+    if find_library('EGL'):
+        return 'vtkEGLRenderWindow'
+    if find_library('OSMesa'):
+        return 'vtkOSMesaRenderWindow'
+    return None
+
+
 def _colours(stops, low, high):
     ctf = vtkColorTransferFunction()
     if len(stops) == 2:
@@ -63,11 +90,19 @@ class SWWScene(object):
 
     def __init__(self, filename):
         self.sww = SWWFile(filename)
+        self.clock = Clock(self.sww.time, self.sww.attrs)
+        self.georef = Georeference(self.sww.attrs)
         self.quantities = [q for q in ('depth', 'speed', 'stage', 'momentum')
                            if q in self.sww.point_names()]
         self.quantity = 'depth'
         self.wet_depth = WET_DEPTH
+        self.view_2d = False
         self._ranges = {}
+        self._maxima = None
+
+        window_class = headless_window()
+        if window_class:
+            os.environ['VTK_DEFAULT_OPENGL_WINDOW'] = window_class
 
         self.renderer = vtkRenderer()
         self.renderer.SetBackground(0.32, 0.34, 0.43)
@@ -78,7 +113,8 @@ class SWWScene(object):
         self.window.OffScreenRenderingOn()
         interactor = vtkRenderWindowInteractor()
         interactor.SetRenderWindow(self.window)
-        interactor.SetInteractorStyle(vtkInteractorStyleTrackballCamera())
+        self.style = vtkInteractorStyleTrackballCamera()
+        interactor.SetInteractorStyle(self.style)
 
         self.bed, self.water = vtkActor(), vtkActor()
         for actor in (self.bed, self.water):
@@ -89,6 +125,13 @@ class SWWScene(object):
         self.scalar_bar.SetNumberOfLabels(5)
         self.scalar_bar.SetMaximumWidthInPixels(80)
         self.renderer.AddViewProp(self.scalar_bar)
+
+        # The time in the corner, so it is in saved pictures too.
+        self.caption = vtkTextActor()
+        self.caption.GetTextProperty().SetFontSize(18)
+        self.caption.GetTextProperty().SetColor(1, 1, 1)
+        self.caption.SetPosition(10, 10)
+        self.renderer.AddViewProp(self.caption)
 
         self.picker = vtkCellPicker()
         self.picker.SetTolerance(0.002)
@@ -150,11 +193,37 @@ class SWWScene(object):
         self.scalar_bar.SetLookupTable(lut)
         self.scalar_bar.SetTitle('%s (%s)' % (quantity.capitalize(), UNITS[quantity]))
 
+    @property
+    def maximum_index(self):
+        """The index past the last timestep that shows the maxima over the run."""
+        return len(self.sww.time)
+
+    def maxima(self):
+        """The bed at the end of the run, with the maximum stage, depth, speed
+        and momentum over it; read once, on first use."""
+        if self._maxima is None:
+            last = self.sww.point_data(len(self.sww.time) - 1, ())
+            data = {'elevation': last['elevation']}
+            for name, values in self.sww.maxima().items():
+                data[name[len('max_'):]] = values
+            self._maxima = data
+        return self._maxima
+
+    def time_label(self, index):
+        if index == self.maximum_index:
+            return 'Maximum over the run'
+        return self.clock.label(index)
+
     def show(self, index):
-        """Build the surfaces for a timestep."""
+        """Build the surfaces for a timestep, or for the maxima over the run
+        at maximum_index."""
         self.index = index
         sww = self.sww
-        data = sww.point_data(index, self.quantities)
+        if index == self.maximum_index:
+            data = self.maxima()
+        else:
+            data = sww.point_data(index, self.quantities)
+        self.caption.SetInput(self.time_label(index))
         bed = _surface(sww.x, sww.y, data['elevation'], sww.triangles,
                        {'elevation': data['elevation']}, {}, 'elevation')
         wet_depth = max(DRY_DEPTH, self.wet_depth)
@@ -169,18 +238,50 @@ class SWWScene(object):
             actor.SetScale(1.0, 1.0, scale)
 
     def reset_camera(self):
-        """An oblique view from the south, like anuga_viewer's."""
+        """An oblique view from the south, like anuga_viewer's, or in 2D a
+        map view from above with north up."""
         xmin, xmax, ymin, ymax, zmin, zmax = self.bed.GetBounds()
         centre = [(xmin + xmax) / 2, (ymin + ymax) / 2, (zmin + zmax) / 2]
         size = max(xmax - xmin, ymax - ymin)
         camera = self.renderer.GetActiveCamera()
         camera.SetFocalPoint(centre)
-        camera.SetPosition(centre[0], centre[1] - 1.2 * size, centre[2] + 0.9 * size)
-        camera.SetViewUp(0, 0, 1)
+        if self.view_2d:
+            camera.SetPosition(centre[0], centre[1], centre[2] + 2 * size)
+            camera.SetViewUp(0, 1, 0)
+        else:
+            camera.SetPosition(centre[0], centre[1] - 1.2 * size, centre[2] + 0.9 * size)
+            camera.SetViewUp(0, 0, 1)
         self.renderer.ResetCamera()
 
+    def set_view_2d(self, view_2d):
+        """Switch between the 3D view and a 2D map view from above, in which
+        dragging with the left button pans rather than rotates."""
+        self.view_2d = bool(view_2d)
+        self.renderer.GetActiveCamera().SetParallelProjection(self.view_2d)
+        style = self.style
+        # An observer on the style replaces its own handling of the event.
+        style.RemoveObservers('LeftButtonPressEvent')
+        style.RemoveObservers('LeftButtonReleaseEvent')
+        if self.view_2d:
+            style.AddObserver('LeftButtonPressEvent', lambda obj, event: obj.OnMiddleButtonDown())
+            style.AddObserver('LeftButtonReleaseEvent', lambda obj, event: obj.OnMiddleButtonUp())
+        self.reset_camera()
+
+    def png(self):
+        """The current view as PNG bytes."""
+        self.window.Render()
+        grab = vtkWindowToImageFilter()
+        grab.SetInput(self.window)
+        grab.ReadFrontBufferOff()
+        grab.Update()
+        writer = vtkPNGWriter()
+        writer.WriteToMemoryOn()
+        writer.SetInputConnection(grab.GetOutputPort())
+        writer.Write()
+        return bytes(memoryview(writer.GetResult()))
+
     def pick(self, x, y):
-        """The (x, y) in file coordinates under a pixel, or None."""
+        """The (x, y) in the file's local coordinates under a pixel, or None."""
         if not self.picker.Pick(x, y, 0, self.renderer):
             return None
         px, py, _ = self.picker.GetPickPosition()

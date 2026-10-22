@@ -4,7 +4,8 @@ import numpy as np
 import pytest
 
 pytest.importorskip('vtkmodules')
-from anuga_paraview.web.scene import COLOUR_MAPS, DEFAULT_MAP, SWWScene  # noqa: E402
+from anuga_paraview.web.scene import (  # noqa: E402
+    COLOUR_MAPS, DEFAULT_MAP, SWWScene, headless_window)
 
 from conftest import DAM_BREAK, NO_MOMENTUM  # noqa: E402
 
@@ -57,6 +58,49 @@ def test_vertical_scale_stretches_every_actor():
         assert actor.GetScale() == (1.0, 1.0, 3.0)
 
 
+def test_the_maxima_follow_the_last_timestep():
+    scene = SWWScene(DAM_BREAK)
+    n = len(scene.sww.time)
+    assert scene.maximum_index == n
+    scene.show(n)
+    assert scene.time_label(n) == 'Maximum over the run'
+    assert scene.caption.GetInput() == 'Maximum over the run'
+    water = scene.water.GetMapper().GetInput()
+    max_depth = water.GetPointData().GetArray('depth').GetRange()[1]
+    deepest = max(scene.sww.point_data(i, ())['depth'].max() for i in range(n))
+    assert max_depth == pytest.approx(deepest)
+    scene.show(0)
+    assert scene.caption.GetInput() == scene.clock.label(0)
+
+
+def test_the_2d_view_looks_down_with_north_up():
+    scene = SWWScene(DAM_BREAK)
+    scene.set_view_2d(True)
+    camera = scene.renderer.GetActiveCamera()
+    assert camera.GetParallelProjection()
+    assert camera.GetViewUp() == pytest.approx((0, 1, 0))
+    assert np.allclose(camera.GetDirectionOfProjection(), (0, 0, -1))
+    assert scene.style.HasObserver('LeftButtonPressEvent')
+    scene.set_view_2d(False)
+    assert not camera.GetParallelProjection()
+    assert not scene.style.HasObserver('LeftButtonPressEvent')
+
+
+def test_headless_window_is_chosen_without_a_display(monkeypatch):
+    import sys
+    monkeypatch.setattr(sys, 'platform', 'linux')
+    egl = {'EGL': 'libEGL.so.1'}.get
+    osmesa = {'OSMesa': 'libOSMesa.so.8'}.get
+    assert headless_window({}, egl) == 'vtkEGLRenderWindow'
+    assert headless_window({}, osmesa) == 'vtkOSMesaRenderWindow'
+    assert headless_window({}, lambda name: None) is None
+    assert headless_window({'DISPLAY': ':0'}, egl) is None
+    assert headless_window({'WAYLAND_DISPLAY': 'wayland-0'}, egl) == 'vtkEGLRenderWindow'
+    assert headless_window({'VTK_DEFAULT_OPENGL_WINDOW': 'x'}, egl) is None
+    monkeypatch.setattr(sys, 'platform', 'darwin')
+    assert headless_window({}, egl) is None
+
+
 def test_the_app_builds_and_reacts_to_its_state():
     pytest.importorskip('trame')
     from trame.app import get_server
@@ -77,7 +121,20 @@ def test_the_app_builds_and_reacts_to_its_state():
     state.index = 5
     state.flush()
     assert scene.index == 5
-    assert state.time_label == 'Time: %.1f s' % scene.sww.time[5]
+    assert state.time_label == scene.clock.label(5)
+
+    state.show_max = True
+    state.flush()
+    assert scene.index == scene.maximum_index
+    assert state.time_label == 'Maximum over the run'
+    state.index = 3                        # the slider goes back to the timesteps
+    state.flush()
+    assert not state.show_max
+    assert scene.index == 3 and state.time_label == scene.clock.label(3)
+
+    state.view_2d = True
+    state.flush()
+    assert scene.view_2d
 
 
 RENDER = """
@@ -96,6 +153,9 @@ grab.Update()
 pixels = vtk_to_numpy(grab.GetOutput().GetPointData().GetScalars())
 print(len(np.unique(pixels, axis=0)))
 print(scene.pick(200, 150) is not None, scene.pick(2, 2) is None)
+scene.set_view_2d(True)
+png = scene.png()
+print(png[:8] == b'\\x89PNG\\r\\n\\x1a\\n', len(png) > 1000)
 """
 
 
@@ -106,6 +166,7 @@ def test_the_scene_renders_and_picks_offscreen():
     result = subprocess.run([sys.executable, '-c', RENDER, DAM_BREAK],
                             capture_output=True, text=True, timeout=120)
     assert result.returncode == 0, result.stderr
-    colours, picks = result.stdout.split('\n')[:2]
+    colours, picks, png = result.stdout.split('\n')[:3]
     assert int(colours) > 100                  # a picture, not a blank window
     assert picks == 'True True'                # the middle hits, a corner misses
+    assert png == 'True True'                  # the 2D view saved as a PNG
