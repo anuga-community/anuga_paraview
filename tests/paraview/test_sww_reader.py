@@ -1,29 +1,32 @@
-"""Checks the ParaView SWW reader against the sample files.
+"""Checks the reader inside ParaView against the sample files.
 
-Run with ParaView's Python, from the repository root:
+Skipped unless paraview.simple can be imported, as it can in an environment
+with conda-forge's paraview:
 
-    pvpython paraview/tests/test_sww_reader.py [file.sww ...]
+    python -m pytest tests/paraview
 
-With no arguments it reads every .sww in data/.
+It can also be run on given files with ParaView's own Python, if
+anuga_paraview is installed there:
+
+    pvpython tests/paraview/test_sww_reader.py file.sww ...
 """
 
-import glob
 import os
 import sys
 
 import numpy as np
 import netCDF4
-from paraview import simple
-from paraview import servermanager
-from vtkmodules.util.numpy_support import vtk_to_numpy
+import pytest
 
-# The test lives in its own directory because ParaView loads every .py file
-# in a PV_PLUGIN_PATH directory as a plugin.
-HERE = os.path.dirname(os.path.abspath(__file__))
-PLUGIN_DIR = os.path.dirname(HERE)
-simple.LoadPlugin(os.path.join(PLUGIN_DIR, 'sww_reader.py'), ns=globals())
-sys.path.insert(0, PLUGIN_DIR)
-import sww_reader  # noqa: E402  (for SWWFile, checked directly below)
+simple = pytest.importorskip('paraview.simple')
+from paraview import servermanager  # noqa: E402
+from vtkmodules.util.numpy_support import vtk_to_numpy  # noqa: E402
+
+from anuga_paraview import PLUGIN  # noqa: E402
+from anuga_paraview.plugin import sww_reader  # noqa: E402  (for SWWFile, checked directly below)
+
+# Adds ANUGASWWReader and ANUGATimeseries to paraview.simple.
+simple.LoadPlugin(PLUGIN, ns=vars(simple))
 
 
 def fetch(reader, port, time):
@@ -45,7 +48,7 @@ def check(filename):
     bedname = 'elevation' if 'elevation' in nc.variables else 'z'
     ntris, npoints = nc['volumes'].shape[0], nc['x'].shape[0]
 
-    reader = ANUGASWWReader(FileName=filename)
+    reader = simple.ANUGASWWReader(FileName=filename)
     reader.UpdatePipelineInformation()
     assert np.allclose(reader.TimestepValues, times), 'timesteps differ'
 
@@ -135,7 +138,7 @@ def check(filename):
     # In double precision: some files store full UTM coordinates as floats.
     px = nc['x'][:][corners].astype(np.float64).mean()
     py = nc['y'][:][corners].astype(np.float64).mean()
-    series = ANUGATimeseries(Input=simple.OutputPort(reader, 0))
+    series = simple.ANUGATimeseries(Input=simple.OutputPort(reader, 0))
     series.Location = [float(px), float(py), 0.0]
     series.Quantities = ['stage', 'depth'] + (['speed'] if 'xmomentum' in nc.variables else [])
     table = servermanager.Fetch(series)
@@ -176,6 +179,10 @@ def check(filename):
                                                   len(times), ' '.join(names)))
 
 
-files = sys.argv[1:] or sorted(glob.glob(os.path.join(PLUGIN_DIR, '..', 'data', '*.sww')))
-for f in files:
-    check(f)
+def test_reader_in_paraview(sww_path):
+    check(sww_path)
+
+
+if __name__ == '__main__':
+    for f in sys.argv[1:]:
+        check(f)

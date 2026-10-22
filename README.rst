@@ -1,17 +1,44 @@
-ParaView reader for SWW files
-=============================
+anuga_paraview
+==============
 
-``sww_reader.py`` is a ParaView plugin that opens ANUGA ``.sww`` files.  It
-is a prototype.
+View ANUGA_ ``.sww`` files in ParaView_, and in a web browser.
 
-Requirements
-------------
+- A **ParaView reader** that opens ``.sww`` files, with an **ANUGA
+  Timeseries** filter that plots quantities at a point straight from the
+  file.
+- ``anuga-paraview``, which starts ParaView with the reader loaded and a
+  ready-made view of a file.
+- ``anuga-web-viewer``, a browser viewer built with trame_ on plain VTK.
+  The server reads the file and renders, so a large file on a remote
+  machine can be viewed without copying it.  It does not need ParaView.
 
-ParaView 6.2 (the version tested; older 5.x releases may work but are
-untested), and in ParaView's Python either ``netCDF4`` or ``scipy``.  The
-conda-forge build of ParaView makes this easy::
+Neither needs ANUGA itself: they read the files with ``netCDF4``.  The
+other viewers are anuga-viewer_, a fast native 3D viewer, and ANUGA's
+``anuga_sww_gui``, for exporting frames and plotting timeseries and
+cross-section flows.
+
+This is early work; the reader and the web viewer are prototypes.
+
+.. _ANUGA: https://github.com/anuga-community/anuga_core
+.. _ParaView: https://www.paraview.org
+.. _anuga-viewer: https://github.com/anuga-community/anuga-viewer
+
+Installing
+----------
+
+For ParaView, the conda-forge build is the easiest, since the reader needs
+``netCDF4`` (or ``scipy``) in ParaView's Python::
 
     conda create -n paraview -c conda-forge paraview netcdf4
+    conda activate paraview
+    pip install git+https://github.com/anuga-community/anuga_paraview
+
+It is tested with ParaView 6.2; older 5.x releases may work but are
+untested.
+
+For the web viewer alone, no ParaView or conda is needed::
+
+    pip install "anuga-paraview[web] @ git+https://github.com/anuga-community/anuga_paraview"
 
 Quick start
 -----------
@@ -19,8 +46,8 @@ Quick start
 ``anuga-paraview`` starts ParaView with the reader loaded, and given a
 file, opens it with a ready-made view::
 
-    paraview/anuga-paraview            # open .sww files with File > Open
-    paraview/anuga-paraview run.sww
+    anuga-paraview            # open .sww files with File > Open
+    anuga-paraview run.sww
 
 The bed is coloured by elevation and the water by depth, with water under
 5 cm faded out so the terrain shows through, and the depth colour range
@@ -30,20 +57,24 @@ to a ``.sww`` opened with File > Open, select the file in the Pipeline
 Browser and run the script from View > Python Shell > Run Script, or add
 it once as a toolbar button with Macros > Import new macro.
 
-The launcher uses the ``paraview`` on the PATH, or ``$PARAVIEW``, and runs it
-on X11 when the session is Wayland.
+The launcher uses the ``paraview`` on the PATH, or the one given by
+``--paraview`` or ``$PARAVIEW``, and runs it on X11 when the session is
+Wayland.
+
+``anuga-web-viewer run.sww`` serves the browser viewer; see `Web viewer`_.
 
 Loading
 -------
 
 In the ParaView GUI, use Tools > Manage Plugins > Load New... and pick
-``sww_reader.py``.  Tick *Auto Load* to have it every session.  ``.sww``
+``sww_reader.py``, in the directory ``anuga-paraview --plugin-path``
+prints.  Tick *Auto Load* to have it every session.  ``.sww``
 files then open with File > Open like any other format.
 
 From ``pvpython``::
 
     from paraview.simple import *
-    LoadPlugin('/path/to/anuga-viewer/paraview/sww_reader.py', ns=globals())
+    LoadPlugin('/path/to/anuga_paraview/plugin/sww_reader.py', ns=globals())
     sww = OpenDataFile('run.sww')
 
 To read files on a remote machine with ``pvserver``, load the plugin on both
@@ -105,10 +136,16 @@ On Linux under Wayland, if ParaView hangs at startup, run it on X11::
 
 If it still hangs, add ``LIBGL_ALWAYS_SOFTWARE=1`` to use software OpenGL.
 
-Setting ``PV_PLUGIN_PATH`` to this directory loads the reader without the
-Manage Plugins dialog::
+Setting ``PV_PLUGIN_PATH`` to the plugin directory loads the reader without
+the Manage Plugins dialog::
 
-    PV_PLUGIN_PATH=/path/to/anuga-viewer/paraview paraview run.sww
+    PV_PLUGIN_PATH=$(anuga-paraview --plugin-path) paraview run.sww
+
+The plugin is alone in that directory because ParaView loads every ``.py``
+file on ``PV_PLUGIN_PATH`` as a plugin.  It needs only ``numpy`` and
+``netCDF4`` (or ``scipy``), so a ParaView with its own Python, such as the
+binaries from paraview.org, can load it by path without ``anuga_paraview``
+being installed there.
 
 Timeseries at a point
 ---------------------
@@ -138,11 +175,11 @@ Save Data writes the chart's table as CSV.
 Web viewer
 ----------
 
-``web/sww_web.py`` is a sketch of a browser viewer built with trame_.  It
-reuses the reader's file code with plain VTK, so it does not need ParaView::
+``anuga-web-viewer`` is a browser viewer built with trame_.  It reuses the
+reader's file code with plain VTK, so it does not need ParaView::
 
-    pip install vtk netCDF4 trame trame-vtk trame-vuetify trame-plotly plotly
-    python paraview/web/sww_web.py run.sww --port 8080
+    pip install "anuga-paraview[web] @ git+https://github.com/anuga-community/anuga_paraview"
+    anuga-web-viewer run.sww --port 8080
 
 and open http://localhost:8080.  The server reads the file and renders, and
 the browser only receives images, so a large file on a remote machine can
@@ -150,17 +187,28 @@ be viewed through ``ssh -L 8080:localhost:8080 host``.  It shows the bed
 and water with a time slider and Play; the side panel sets the quantity the
 water is coloured by, the colour map and scale maximum, the depth below
 which water is hidden, and the vertical scale, and plots a timeseries at a
-picked point.  It has been tried only with the VTK in ParaView's conda
-package.
+picked point.  It works with the ``vtk`` wheel from pip, which renders
+without a display (through EGL or OSMesa) on a headless server, and with
+the VTK in ParaView's conda package.  It serves one user at a time.
 
 .. _trame: https://kitware.github.io/trame/
 
 Testing
 -------
 
-From the repository root::
+::
 
-    pvpython paraview/tests/test_sww_reader.py
+    pip install -e ".[web,test]"
+    python -m pytest
 
-This checks the reader against every file in ``data/``, comparing the
-geometry and arrays with values read directly from the file.
+checks the reader's file code, the reader as a plain VTK algorithm, the web
+viewer and the launcher against the sample files in ``data/``, comparing
+with values read directly from the files.  In an environment with
+ParaView (``conda install -c conda-forge paraview``), the same command also
+checks the reader inside ParaView (``tests/paraview/``); elsewhere those
+tests are skipped.
+
+License
+-------
+
+Apache License 2.0, as for ANUGA.

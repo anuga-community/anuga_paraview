@@ -3,7 +3,7 @@
 Normally run through the launcher, which loads the reader and passes the
 file in ANUGA_SWW_FILE:
 
-    paraview/anuga-paraview run.sww
+    anuga-paraview run.sww
 
 It can also be run in an open ParaView session with View > Python Shell >
 Run Script, where it sets up the view for the selected .sww reader.
@@ -18,9 +18,11 @@ import os
 
 import paraview.simple as pv
 
-# This file sits in paraview/scripts/, the reader one level up.
+# This file sits in anuga_paraview/scripts/, the reader in
+# anuga_paraview/plugin/.  Found by path, since ParaView's own Python may not
+# have anuga_paraview installed.
 PLUGIN = os.path.join(os.path.dirname(os.path.dirname(
-    os.path.abspath(globals().get('__file__', os.getcwd())))), 'sww_reader.py')
+    os.path.abspath(globals().get('__file__', os.getcwd())))), 'plugin', 'sww_reader.py')
 
 # Depth (m) over which water fades from transparent to opaque.
 FADE_DEPTH = 0.05
@@ -43,7 +45,7 @@ def _reader():
     source = pv.GetActiveSource()
     if source is not None and source.GetXMLName() == 'ANUGASWWReader':
         return source
-    raise RuntimeError('Open a .sww file and select it, or run paraview/anuga-paraview file.sww')
+    raise RuntimeError('Open a .sww file and select it, or run anuga-paraview file.sww')
 
 
 def _timesteps(reader):

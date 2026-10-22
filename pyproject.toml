@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "anuga-paraview"
+dynamic = ["version"]
+description = "View ANUGA .sww files in ParaView, and in a web browser"
+readme = "README.rst"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+authors = [{ name = "ANUGA community" }]
+keywords = ["anuga", "paraview", "vtk", "trame", "hydrodynamics", "visualisation"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Visualization",
+]
+# ParaView brings its own VTK.  The web viewer needs VTK from pip (or
+# ParaView's) and trame: pip install anuga-paraview[web].
+dependencies = ["numpy", "netCDF4"]
+
+[project.optional-dependencies]
+web = ["vtk", "trame", "trame-vtk", "trame-vuetify", "trame-plotly", "plotly"]
+test = ["pytest"]
+
+[project.scripts]
+anuga-paraview = "anuga_paraview.cli:main"
+anuga-web-viewer = "anuga_paraview.web.app:main"
+
+[project.urls]
+Homepage = "https://github.com/anuga-community/anuga_paraview"
+Issues = "https://github.com/anuga-community/anuga_paraview/issues"
+
+[tool.setuptools.dynamic]
+version = { attr = "anuga_paraview.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+# pycodestyle and pyflakes.
+select = ["E", "F", "W"]

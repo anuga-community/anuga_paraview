@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  lint:
+    name: ruff check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install ruff
+      - run: ruff check .
+
+  vtk:
+    # The reader's file code, the reader as a plain VTK algorithm, the web
+    # viewer and the launcher, with the vtk wheel from pip.
+    name: pip vtk (${{ matrix.os }}, py${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python: ["3.10", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install OpenGL for headless rendering
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libosmesa6
+      - run: pip install -e ".[web,test]"
+      - run: python -m pytest -v
+
+  paraview:
+    # Everything above with ParaView's VTK, plus the reader inside ParaView.
+    name: ParaView (conda-forge)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -el {0}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install OpenGL for headless rendering
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libosmesa6
+      - uses: conda-incubator/setup-miniconda@v3
+        with:
+          miniforge-version: latest
+          activate-environment: paraview
+          channels: conda-forge
+      - run: conda install -y paraview netcdf4 pytest
+      - run: pip install -e . --no-deps
+      - run: python -c "import paraview.simple; print(paraview.simple.GetParaViewVersion())"
+      - run: python -m pytest -v
