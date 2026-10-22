@@ -36,6 +36,16 @@ jobs:
       - name: Install OpenGL for headless rendering
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libosmesa6
+      - name: Install Mesa for headless rendering
+        # Windows runners have no OpenGL 3.2; VTK then falls back to OSMesa,
+        # as a Windows server without a GPU would.
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          curl -sSfLo mesa.7z https://github.com/pal1000/mesa-dist-win/releases/download/26.2.4/mesa3d-26.2.4-release-msvc.7z
+          7z x -omesa mesa.7z > /dev/null
+          ls mesa/x64
+          cygpath -w "$PWD/mesa/x64" >> "$GITHUB_PATH"
       - run: pip install -e ".[web,test]"
       - run: python -m pytest -v
 
